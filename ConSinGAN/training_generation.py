@@ -2,7 +2,6 @@ import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,19 +43,17 @@ def train(opt):
             d_curr.load_state_dict(torch.load('%s/%d/netD.pth' % (opt.out_,scale_num-1)))
             generator.init_next_stage()
 
-        writer = SummaryWriter(log_dir=opt.outf)
-        fixed_noise, noise_amp, generator, d_curr = train_single_scale(d_curr, generator, reals, fixed_noise, noise_amp, opt, scale_num, writer)
+        fixed_noise, noise_amp, generator, d_curr = train_single_scale(d_curr, generator, reals, fixed_noise, noise_amp, opt, scale_num)
 
         torch.save(fixed_noise, '%s/fixed_noise.pth' % (opt.out_))
         torch.save(generator, '%s/G.pth' % (opt.out_))
         torch.save(reals, '%s/reals.pth' % (opt.out_))
         torch.save(noise_amp, '%s/noise_amp.pth' % (opt.out_))
         del d_curr
-    writer.close()
     return
 
 
-def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth, writer):
+def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth):
     reals_shapes = [real.shape for real in reals]
     real = reals[depth]
 
@@ -181,16 +178,10 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth, wr
         ############################
         # (3) Log Results
         ###########################
-        if iter % 250 == 0 or iter+1 == opt.niter:
-            writer.add_scalar('Loss/train/D/real/{}'.format(j), -errD_real.item(), iter+1)
-            writer.add_scalar('Loss/train/D/fake/{}'.format(j), errD_fake.item(), iter+1)
-            writer.add_scalar('Loss/train/D/gradient_penalty/{}'.format(j), gradient_penalty.item(), iter+1)
-            writer.add_scalar('Loss/train/G/gen', errG.item(), iter+1)
-            writer.add_scalar('Loss/train/G/reconstruction', rec_loss.item(), iter+1)
         if iter % 500 == 0 or iter+1 == opt.niter:
             functions.save_image('{}/fake_sample_{}.jpg'.format(opt.outf, iter+1), fake.detach())
             functions.save_image('{}/reconstruction_{}.jpg'.format(opt.outf, iter+1), rec.detach())
-            generate_samples(netG, opt, depth, noise_amp, writer, reals, iter+1)
+            generate_samples(netG, opt, depth, noise_amp, reals, iter+1)
 
         schedulerD.step()
         schedulerG.step()
@@ -200,7 +191,7 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth, wr
     return fixed_noise, noise_amp, netG, netD
 
 
-def generate_samples(netG, opt, depth, noise_amp, writer, reals, iter, n=25):
+def generate_samples(netG, opt, depth, noise_amp, reals, iter, n=25):
     opt.out_ = functions.generate_dir2save(opt)
     dir2save = '{}/gen_samples_stage_{}'.format(opt.out_, depth)
     reals_shapes = [r.shape for r in reals]
@@ -219,7 +210,6 @@ def generate_samples(netG, opt, depth, noise_amp, writer, reals, iter, n=25):
         all_images = torch.cat(all_images, 0)
         all_images[0] = reals[depth].squeeze()
         grid = make_grid(all_images, nrow=min(5, n), normalize=True)
-        writer.add_image('gen_images_{}'.format(depth), grid, iter)
 
 
 def init_G(opt):

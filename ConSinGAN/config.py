@@ -14,7 +14,7 @@ def get_arguments():
     parser.add_argument('--padd_size',type=int,help='net pad size',default=0)
         
     #pyramid parameters:
-    parser.add_argument('--nc_im',type=int,help='image # channels',default=3)
+    parser.add_argument('--nc_im',type=int,help='image # channels',default=2)
     parser.add_argument('--noise_amp',type=float,help='additive noise cont weight',default=0.1)
     parser.add_argument('--min_size',type=int,help='image minimal size at the coarser scale',default=25)
     parser.add_argument('--max_size', type=int,help='image minimal size at the coarser scale', default=250)

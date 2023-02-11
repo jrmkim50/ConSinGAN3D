@@ -29,6 +29,10 @@ def upsample(x, size):
     x_up =  torch.nn.functional.interpolate(x, size=size, mode='bicubic', align_corners=True)
     return x_up
 
+def upsample3D(x, size):
+    x_up =  torch.nn.functional.interpolate(x, size=size, mode='trilinear', align_corners=True)
+    return x_up
+
 
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channel, out_channel, ker_size, padd, opt, generator=False):
@@ -152,10 +156,10 @@ class GrowingGenerator3D(nn.Module):
         self.opt = opt
         N = int(opt.nfc)
 
-        self._pad = nn.ZeroPad3d(1)
-        self._pad_block = nn.ZeroPad3d(opt.num_layer-1) if opt.train_mode == "generation"\
+        self._pad = nn.ConstantPad3d(1, 0)
+        self._pad_block = nn.ConstantPad3d(opt.num_layer-1, 0) if opt.train_mode == "generation"\
                                                            or opt.train_mode == "animation" \
-                                                        else nn.ZeroPad3d(opt.num_layer)
+                                                        else nn.ConstantPad3d(opt.num_layer, 0)
 
         self.head = ConvBlock3D(opt.nc_im, N, opt.ker_size, opt.padd_size, opt, generator=True)
 
@@ -179,18 +183,19 @@ class GrowingGenerator3D(nn.Module):
         # we do some upsampling for training models for unconditional generation to increase
         # the image diversity at the edges of generated images
         if self.opt.train_mode == "generation" or self.opt.train_mode == "animation":
-            x = upsample(x, size=[x.shape[2] + 2, x.shape[3] + 2])
+            x = upsample3D(x, size=[x.shape[2] + 2, x.shape[3] + 2, x.shape[4] + 2])
         x = self._pad_block(x)
         x_prev_out = self.body[0](x)
 
         for idx, block in enumerate(self.body[1:], 1):
             if self.opt.train_mode == "generation" or self.opt.train_mode == "animation":
-                x_prev_out_1 = upsample(x_prev_out, size=[real_shapes[idx][2], real_shapes[idx][3]])
-                x_prev_out_2 = upsample(x_prev_out, size=[real_shapes[idx][2] + self.opt.num_layer*2,
-                                                          real_shapes[idx][3] + self.opt.num_layer*2])
+                x_prev_out_1 = upsample3D(x_prev_out, size=[real_shapes[idx][2], real_shapes[idx][3], real_shapes[idx][4]])
+                x_prev_out_2 = upsample3D(x_prev_out, size=[real_shapes[idx][2] + self.opt.num_layer*2,
+                                                            real_shapes[idx][3] + self.opt.num_layer*2, 
+                                                            real_shapes[idx][4] + self.opt.num_layer*2])
                 x_prev = block(x_prev_out_2 + noise[idx] * noise_amp[idx])
             else:
-                x_prev_out_1 = upsample(x_prev_out, size=real_shapes[idx][2:])
+                x_prev_out_1 = upsample3D(x_prev_out, size=real_shapes[idx][2:])
                 x_prev = block(self._pad_block(x_prev_out_1+noise[idx]*noise_amp[idx]))
             x_prev_out = x_prev + x_prev_out_1
 

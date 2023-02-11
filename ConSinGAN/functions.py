@@ -102,12 +102,12 @@ def save_image(name, image):
     plt.imsave(name, convert_image_np(image), vmin=0, vmax=1)
 
 def save_image3D(name, image_3D, channel):
-    image_np = convert_image_np3D(image)
+    image_np = convert_image_np3D(image_3D)
     plt.imsave(name, image_np[:,image_np.shape[1] // 2, :, channel], vmin=0, vmax=1)
 
 def save_nii(name, image_3D):
-    image_np = convert_image_np3D(image)
-    img = nib.Nifti1Image(image_3D, np.eye(4))
+    image_np = convert_image_np3D(image_3D)
+    img = nib.Nifti1Image(image_np, np.eye(4))
     nib.save(img, name)
 
 
@@ -333,7 +333,7 @@ def generate_dir2save(opt):
         if opt.fine_tune:
             dir2save += "_{}".format("fine-tune")
     # Jeremy changed below line
-    dir2save += "_train_depth_{}_lr_scale_{}_lr_{}_num_layer_{}".format(opt.train_depth, opt.lr_scale, opt.lr_g, opt.num_layer)
+    dir2save += "_train_depth_{}_lr_{}_num_layer_{}_train_stages_{}".format(opt.train_depth, opt.lr_g, opt.num_layer, opt.train_stages)
     if opt.batch_norm:
         dir2save += "_BN"
     dir2save += "_act_" + opt.activation

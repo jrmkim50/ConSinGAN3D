@@ -215,7 +215,7 @@ def generate_samples(netG, opt, depth, noise_amp, reals, iter, n=25):
         all_images[0] = reals[depth].squeeze()
         grid = make_grid(all_images, nrow=min(5, n), normalize=True)
 
-def generate_samples3D(netG, opt, depth, noise_amp, reals, iter, n=25):
+def generate_samples3D(netG, opt, depth, noise_amp, reals, iter, n=10):
     opt.out_ = functions.generate_dir2save(opt)
     dir2save = '{}/gen_samples_stage_{}'.format(opt.out_, depth)
     reals_shapes = [r.shape for r in reals]
@@ -229,7 +229,7 @@ def generate_samples3D(netG, opt, depth, noise_amp, reals, iter, n=25):
             noise = functions.sample_random_noise3D(depth, reals_shapes, opt)
             sample = netG(noise, reals_shapes, noise_amp)
             all_images.append(sample)
-            functions.save_image('{}/gen_sample_{}.jpg'.format(dir2save, idx), sample.detach())
+            functions.save_nii('{}/gen_sample_{}.nii.gz'.format(dir2save, idx), sample.detach())
 
         # TODO for Jeremy: Possibly save this grid?
         # all_images = torch.cat(all_images, 0)

@@ -12,10 +12,10 @@ import random
 import datetime
 import dateutil.tz
 import copy
-from albumentations import HueSaturationValue, IAAAdditiveGaussianNoise, GaussNoise, OneOf,\
-    Compose, MultiplicativeNoise, ToSepia, ChannelDropout, ChannelShuffle, Cutout, InvertImg
 
-from ConSinGAN.imresize import imresize, imresize_in, imresize_to_shape
+from ConSinGAN.imresize import imresize, imresize3D, imresize_to_shape
+
+import nibabel as nib
 
 
 def denorm(x):
@@ -41,6 +41,13 @@ def convert_image_np(inp):
     inp = np.clip(inp,0,1)
     return inp
 
+def convert_image_np3D(inp):
+    inp = denorm(inp)
+    inp = move_to_cpu(inp[-1,:,:,:,:])
+    inp = inp.numpy().transpose((1,2,3,0)) # [w,h,d,c]
+    inp = np.clip(inp,0,1)
+    return inp
+
 
 def generate_noise(size,num_samp=1,device='cuda',type='gaussian', scale=1):
     if type == 'gaussian':
@@ -56,15 +63,33 @@ def generate_noise(size,num_samp=1,device='cuda',type='gaussian', scale=1):
         raise NotImplementedError
     return noise
 
+def generate_noise3D(size,num_samp=1,device='cuda',type='gaussian', scale=1):
+    if type == 'gaussian':
+        noise = torch.randn(num_samp, size[0], round(size[1]/scale), round(size[2]/scale), round(size[3]/scale), device=device)
+        noise = upsampling3D(noise, size[1], size[2], size[3])
+    elif type =='gaussian_mixture':
+        noise1 = torch.randn(num_samp, size[0], size[1], size[2], size[3], device=device)+5
+        noise2 = torch.randn(num_samp, size[0], size[1], size[2], size[3], device=device)
+        noise = noise1+noise2
+    elif type == 'uniform':
+        noise = torch.randn(num_samp, size[0], size[1], size[2], size[3], device=device)
+    else:
+        raise NotImplementedError
+    return noise
+
 
 def upsampling(im,sx,sy):
     m = nn.Upsample(size=[round(sx),round(sy)],mode='bilinear',align_corners=True)
     return m(im)
 
+def upsampling3D(im,sx,sy,sz):
+    m = nn.Upsample(size=[round(sx),round(sy),round(sz)],mode='trilinear',align_corners=True)
+    return m(im)
 
-def move_to_gpu(t):
+
+def move_to_gpu(t, opt):
     if (torch.cuda.is_available()):
-        t = t.to(torch.device('cuda'))
+        t = t.to(opt.device)
     return t
 
 
@@ -75,6 +100,15 @@ def move_to_cpu(t):
 
 def save_image(name, image):
     plt.imsave(name, convert_image_np(image), vmin=0, vmax=1)
+
+def save_image3D(name, image_3D, channel):
+    image_np = convert_image_np3D(image)
+    plt.imsave(name, image_np[:,image_np.shape[1] // 2, :, channel], vmin=0, vmax=1)
+
+def save_nii(name, image_3D):
+    image_np = convert_image_np3D(image)
+    img = nib.Nifti1Image(image_3D, np.eye(4))
+    nib.save(img, name)
 
 
 def sample_random_noise(depth, reals_shapes, opt):
@@ -90,6 +124,25 @@ def sample_random_noise(depth, reals_shapes, opt):
                                              device=opt.device).detach())
             else:
                 noise.append(generate_noise([opt.nfc, reals_shapes[d][2], reals_shapes[d][3]],
+                                             device=opt.device).detach())
+
+    return noise
+
+def sample_random_noise3D(depth, reals_shapes, opt):
+    noise = []
+    for d in range(depth + 1):
+        if d == 0:
+            noise.append(generate_noise3D([opt.nc_im, reals_shapes[d][2], reals_shapes[d][3], reals_shapes[d][4]],
+                                         device=opt.device).detach())
+        else:
+            if opt.train_mode == "generation" or opt.train_mode == "animation":
+                noise.append(generate_noise3D([opt.nfc, reals_shapes[d][2] + opt.num_layer * 2,
+                                             reals_shapes[d][3] + opt.num_layer * 2, 
+                                             reals_shapes[d][4] + opt.num_layer * 2],
+                                             device=opt.device).detach())
+            else:
+                assert False, "UNIMPLEMENTED"
+                noise.append(generate_noise([opt.nfc, reals_shapes[d][2], reals_shapes[d][3], reals_shapes[d][4]],
                                              device=opt.device).detach())
 
     return noise
@@ -131,6 +184,18 @@ def read_image(opt):
     x = x[:,0:3,:,:]
     return x
 
+Z_CROPS = {
+    "i104288_img_0.nii.gz" : 114
+}
+
+def read_image3D(opt):
+    x = nib.load('%s' % (opt.input_name)).get_fdata() # [w,h,d,c]
+    x[:,:,:,0] /= 0.172 # place ct in [0 - 1 range]
+    file_name = opt.input_name.split("/")[-1]
+    if file_name in Z_CROPS:
+        x = x[:,:,:Z_CROPS[file_name]]
+    x = np2torch3D(x,opt)
+    return x
 
 def read_image_dir(dir, opt):
     x = img.imread(dir)
@@ -138,6 +203,19 @@ def read_image_dir(dir, opt):
     x = x[:,0:3,:,:]
     return x
 
+
+def np2torch3D(x, opt):
+    '''
+    x: w,h,d,c
+    '''
+    x = x[:,:,:,:,None]
+    x = x.transpose((4, 3, 0, 1, 2)) # [b,c,w,h,d]
+    x = torch.from_numpy(x)
+    if not(opt.not_cuda):
+        x = move_to_gpu(x, opt)
+    x = x.type(torch.cuda.FloatTensor) if not(opt.not_cuda) else x.type(torch.FloatTensor)
+    x = norm(x)
+    return x
 
 def np2torch(x, opt):
     if opt.nc_im == 3:
@@ -149,7 +227,7 @@ def np2torch(x, opt):
         x = x.transpose(3, 2, 0, 1)
     x = torch.from_numpy(x)
     if not(opt.not_cuda):
-        x = move_to_gpu(x)
+        x = move_to_gpu(x, opt)
     x = x.type(torch.cuda.FloatTensor) if not(opt.not_cuda) else x.type(torch.FloatTensor)
     x = norm(x)
     return x
@@ -188,6 +266,14 @@ def adjust_scales2image(real_, opt):
     opt.scale_factor = math.pow(opt.min_size / (min(real.shape[2], real.shape[3])), 1 / opt.stop_scale)
     return real
 
+def adjust_scales2image3D(real_, opt):
+    opt.scale1 = min(opt.max_size / max([real_.shape[2], real_.shape[3], real_.shape[4]]),1)
+    real = imresize3D(real_, opt.scale1, opt)
+
+    opt.stop_scale = opt.train_stages - 1
+    opt.scale_factor = math.pow(opt.min_size / (min(real.shape[2], real.shape[3], real_.shape[4])), 1 / opt.stop_scale)
+    return real
+
 
 def create_reals_pyramid(real, opt):
     reals = []
@@ -202,6 +288,23 @@ def create_reals_pyramid(real, opt):
         for i in range(opt.stop_scale):
             scale = math.pow(opt.scale_factor,((opt.stop_scale-1)/math.log(opt.stop_scale))*math.log(opt.stop_scale-i)+1)
             curr_real = imresize(real,scale,opt)
+            reals.append(curr_real)
+    reals.append(real)
+    return reals
+
+def create_reals_pyramid3D(real, opt):
+    reals = []
+    # use old rescaling method for harmonization
+    if opt.train_mode == "harmonization":
+        for i in range(opt.stop_scale):
+            scale = math.pow(opt.scale_factor, opt.stop_scale - i)
+            curr_real = imresize3D(real, scale, opt)
+            reals.append(curr_real)
+    # use new rescaling method for all other tasks
+    else:
+        for i in range(opt.stop_scale):
+            scale = math.pow(opt.scale_factor,((opt.stop_scale-1)/math.log(opt.stop_scale))*math.log(opt.stop_scale-i)+1)
+            curr_real = imresize3D(real,scale,opt)
             reals.append(curr_real)
     reals.append(real)
     return reals
@@ -350,45 +453,6 @@ def shuffle_grid(image, max_tiles=5):
         new_image[x_new:x_new+w, y_new:y_new+h, :] = image[x:x+w, y:y+h, :]
 
     return new_image
-
-
-class Augment():
-    def __init__(self):
-        super().__init__()
-        self._transofrm = self.strong_aug()
-
-    def strong_aug(self):
-        color_r = random.randint(0, 256)
-        color_g = random.randint(0, 256)
-        color_b = random.randint(0, 256)
-        num_holes = random.randint(1, 2)
-        if num_holes == 2:
-            max_h_size = random.randint(15, 30)
-            max_w_size = random.randint(15, 30)
-        else:
-            max_h_size = random.randint(30, 60)
-            max_w_size = random.randint(30, 60)
-        return Compose([
-            OneOf([
-                OneOf([
-                    MultiplicativeNoise(multiplier=[0.5, 1.5], elementwise=True, per_channel=True, p=0.2),
-                    IAAAdditiveGaussianNoise(),
-                    GaussNoise()]),
-                OneOf([
-                    InvertImg(),
-                    ToSepia()]),
-                OneOf([
-                    ChannelDropout(channel_drop_range=(1, 1), fill_value=0),
-                    ChannelShuffle()]),
-                HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.1)],
-                p=0.25),
-            Cutout(num_holes=num_holes, max_h_size=max_h_size, max_w_size=max_w_size,
-                   fill_value=[color_r, color_g, color_b], p=0.9),
-        ])
-
-    def transform(self, **x):
-        _transform = self.strong_aug()
-        return _transform(**x)
 
 
 def generate_gif(dir2save, netG, fixed_noise, reals, noise_amp, opt, alpha=0.1, beta=0.9, start_scale=1,

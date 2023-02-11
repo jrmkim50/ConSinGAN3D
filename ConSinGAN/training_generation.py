@@ -18,13 +18,13 @@ def train(opt):
     print("\t learning rate scaling: {}".format(opt.lr_scale))
     print("\t non-linearity: {}".format(opt.activation))
 
-    real = functions.read_image(opt)
-    real = functions.adjust_scales2image(real, opt)
-    reals = functions.create_reals_pyramid(real, opt)
+    real = functions.read_image3D(opt)
+    real = functions.adjust_scales2image3D(real, opt)
+    reals = functions.create_reals_pyramid3D(real, opt)
     print("Training on image pyramid: {}".format([r.shape for r in reals]))
     print("")
 
-    generator = init_G(opt)
+    generator = init_G3D(opt)
     fixed_noise = []
     noise_amp = []
 
@@ -36,9 +36,10 @@ def train(opt):
         except OSError:
                 print(OSError)
                 pass
-        functions.save_image('{}/real_scale.jpg'.format(opt.outf), reals[scale_num])
+        functions.save_image3D('{}/real_scale_ct.jpg'.format(opt.outf), reals[scale_num], 0)
+        functions.save_image3D('{}/real_scale_pet.jpg'.format(opt.outf), reals[scale_num], 1)
 
-        d_curr = init_D(opt)
+        d_curr = init_D3D(opt)
         if scale_num > 0:
             d_curr.load_state_dict(torch.load('%s/%d/netD.pth' % (opt.out_,scale_num-1)))
             generator.init_next_stage()
@@ -66,16 +67,17 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth):
         if opt.train_mode == "generation" or opt.train_mode == "retarget":
             z_opt = reals[0]
         elif opt.train_mode == "animation":
-            z_opt = functions.generate_noise([opt.nc_im, reals_shapes[depth][2], reals_shapes[depth][3]],
+            z_opt = functions.generate_noise3D([opt.nc_im, reals_shapes[depth][2], reals_shapes[depth][3], reals_shapes[depth][4]],
                                              device=opt.device).detach()
     else:
         if opt.train_mode == "generation" or opt.train_mode == "animation":
-            z_opt = functions.generate_noise([opt.nfc,
+            z_opt = functions.generate_noise3D([opt.nfc,
                                               reals_shapes[depth][2]+opt.num_layer*2,
-                                              reals_shapes[depth][3]+opt.num_layer*2],
+                                              reals_shapes[depth][3]+opt.num_layer*2, 
+                                              reals_shapes[depth][4]+opt.num_layer*2],
                                               device=opt.device)
         else:
-            z_opt = functions.generate_noise([opt.nfc, reals_shapes[depth][2], reals_shapes[depth][3]],
+            z_opt = functions.generate_noise3D([opt.nfc, reals_shapes[depth][2], reals_shapes[depth][3], reals_shapes[depth][4]],
                                               device=opt.device).detach()
     fixed_noise.append(z_opt.detach())
 
@@ -129,7 +131,7 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth):
         ############################
         # (0) sample noise for unconditional generation
         ###########################
-        noise = functions.sample_random_noise(depth, reals_shapes, opt)
+        noise = functions.sample_random_noise3D(depth, reals_shapes, opt)
 
         ############################
         # (1) Update D network: maximize D(x) + D(G(z))
@@ -179,9 +181,11 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth):
         # (3) Log Results
         ###########################
         if iter % 500 == 0 or iter+1 == opt.niter:
-            functions.save_image('{}/fake_sample_{}.jpg'.format(opt.outf, iter+1), fake.detach())
-            functions.save_image('{}/reconstruction_{}.jpg'.format(opt.outf, iter+1), rec.detach())
-            generate_samples(netG, opt, depth, noise_amp, reals, iter+1)
+            functions.save_image3D('{}/fake_sample_{}_ct.jpg'.format(opt.outf, iter+1), fake.detach(), 0)
+            functions.save_image3D('{}/fake_sample_{}_pet.jpg'.format(opt.outf, iter+1), fake.detach(), 1)
+            functions.save_image3D('{}/reconstruction_{}_ct.jpg'.format(opt.outf, iter+1), rec.detach(), 0)
+            functions.save_image3D('{}/reconstruction_{}_pet.jpg'.format(opt.outf, iter+1), rec.detach(), 1)
+            generate_samples3D(netG, opt, depth, noise_amp, reals, iter+1)
 
         schedulerD.step()
         schedulerG.step()
@@ -211,6 +215,27 @@ def generate_samples(netG, opt, depth, noise_amp, reals, iter, n=25):
         all_images[0] = reals[depth].squeeze()
         grid = make_grid(all_images, nrow=min(5, n), normalize=True)
 
+def generate_samples3D(netG, opt, depth, noise_amp, reals, iter, n=25):
+    opt.out_ = functions.generate_dir2save(opt)
+    dir2save = '{}/gen_samples_stage_{}'.format(opt.out_, depth)
+    reals_shapes = [r.shape for r in reals]
+    all_images = []
+    try:
+        os.makedirs(dir2save)
+    except OSError:
+        pass
+    with torch.no_grad():
+        for idx in range(n):
+            noise = functions.sample_random_noise3D(depth, reals_shapes, opt)
+            sample = netG(noise, reals_shapes, noise_amp)
+            all_images.append(sample)
+            functions.save_image('{}/gen_sample_{}.jpg'.format(dir2save, idx), sample.detach())
+
+        # TODO for Jeremy: Possibly save this grid?
+        # all_images = torch.cat(all_images, 0)
+        # all_images[0] = reals[depth].squeeze()
+        # grid = make_grid(all_images, nrow=min(5, n), normalize=True)
+
 
 def init_G(opt):
     # generator initialization:
@@ -220,9 +245,25 @@ def init_G(opt):
 
     return netG
 
+def init_G3D(opt):
+    # generator initialization:
+    netG = models.GrowingGenerator3D(opt).to(opt.device)
+    netG.apply(models.weights_init)
+    # print(netG)
+
+    return netG
+
 def init_D(opt):
     #discriminator initialization:
     netD = models.Discriminator(opt).to(opt.device)
+    netD.apply(models.weights_init)
+    # print(netD)
+
+    return netD
+
+def init_D3D(opt):
+    #discriminator initialization:
+    netD = models.Discriminator3D(opt).to(opt.device)
     netD.apply(models.weights_init)
     # print(netD)
 

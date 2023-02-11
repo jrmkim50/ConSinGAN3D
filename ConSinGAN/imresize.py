@@ -13,9 +13,9 @@ def norm(x):
     out = (x - 0.5) * 2
     return out.clamp(-1, 1)
 
-def move_to_gpu(t):
+def move_to_gpu(t, opt):
     if (torch.cuda.is_available()):
-        t = t.to(torch.device('cuda'))
+        t = t.to(opt.device)
     return t
 
 def np2torch(x,opt):
@@ -28,9 +28,22 @@ def np2torch(x,opt):
         x = x.transpose(3, 2, 0, 1)
     x = torch.from_numpy(x)
     if not (opt.not_cuda):
-        x = move_to_gpu(x)
+        x = move_to_gpu(x, opt)
     x = x.type(torch.cuda.FloatTensor) if not(opt.not_cuda) else x.type(torch.FloatTensor)
     #x = x.type(torch.cuda.FloatTensor)
+    x = norm(x)
+    return x
+
+def np2torch3D(x, opt):
+    '''
+    x: w,h,d,c
+    '''
+    x = x[:,:,:,:,None]
+    x = x.transpose((4, 3, 0, 1, 2)) # [b,c,w,h,d]
+    x = torch.from_numpy(x)
+    if not(opt.not_cuda):
+        x = move_to_gpu(x, opt)
+    x = x.type(torch.cuda.FloatTensor) if not(opt.not_cuda) else x.type(torch.FloatTensor)
     x = norm(x)
     return x
 
@@ -52,17 +65,29 @@ def imresize(im,scale,opt):
     im = np2torch(im,opt)
     return im
 
+def imresize3D(im,scale,opt):
+    im = im[0].permute((1,2,3,0)) # [w,h,d,c]
+    im = denorm(im) # move from -1 to 1 range to to 0 to 1 range
+    try:
+        im = im.cpu().numpy()
+    except:
+        im = im.detach().cpu().numpy()
+    im = imresize_in(im, scale_factor=scale, is_3d = True)
+    im = np2torch3D(im,opt)
+    return im
+
 
 def imresize_to_shape(im,output_shape,opt):
+    assert False, "Unimplemented!"
     im = torch2uint8(im)
     im = imresize_in(im, output_shape=output_shape)
     im = np2torch(im,opt)
     return im
 
 
-def imresize_in(im, scale_factor=None, output_shape=None, kernel=None, antialiasing=True, kernel_shift_flag=False):
+def imresize_in(im, scale_factor=None, output_shape=None, kernel=None, antialiasing=True, kernel_shift_flag=False, is_3d=False):
     # First standardize values and fill missing arguments (if needed) by deriving scale from output shape or vice versa
-    scale_factor, output_shape = fix_scale_and_size(im.shape, output_shape, scale_factor)
+    scale_factor, output_shape = fix_scale_and_size(im.shape, output_shape, scale_factor, is_3d)
 
     # For a given numeric kernel case, just do convolution and sub-sampling (downscaling only)
     if type(kernel) == np.ndarray and scale_factor[0] <= 1:
@@ -102,13 +127,16 @@ def imresize_in(im, scale_factor=None, output_shape=None, kernel=None, antialias
     return out_im
 
 
-def fix_scale_and_size(input_shape, output_shape, scale_factor):
+def fix_scale_and_size(input_shape, output_shape, scale_factor, is_3d = False):
     # First fixing the scale-factor (if given) to be standardized the function expects (a list of scale factors in the
     # same size as the number of input dimensions)
     if scale_factor is not None:
         # By default, if scale-factor is a scalar we assume 2d resizing and duplicate it.
         if np.isscalar(scale_factor):
-            scale_factor = [scale_factor, scale_factor]
+            if is_3d:
+                scale_factor = [scale_factor, scale_factor, scale_factor]
+            else:    
+                scale_factor = [scale_factor, scale_factor]
 
         # We extend the size of scale-factor list to the size of the input by assigning 1 to all the unspecified scales
         scale_factor = list(scale_factor)

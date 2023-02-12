@@ -9,7 +9,7 @@ from ConSinGAN.imresize import imresize, imresize_to_shape
 
 def weights_init(m):
     classname = m.__class__.__name__
-    if classname.find('Conv2d') != -1:
+    if classname.find('Conv3d') != -1: # classname.find('Conv2d') != -1 or 
         m.weight.data.normal_(0.0, 0.02)
     elif classname.find('Norm') != -1:
         m.weight.data.normal_(1.0, 0.02)
@@ -49,8 +49,7 @@ class ConvBlock3D(nn.Sequential):
         if generator and opt.batch_norm:
             self.add_module('norm', nn.BatchNorm3d(out_channel))
         self.add_module(opt.activation, get_activation(opt))
-
-   
+        
 class Discriminator(nn.Module):
     def __init__(self, opt):
         super(Discriminator, self).__init__()

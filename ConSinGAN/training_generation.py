@@ -36,8 +36,8 @@ def train(opt):
         except OSError:
                 print(OSError)
                 pass
-        functions.save_image3D('{}/real_scale_ct.jpg'.format(opt.outf), reals[scale_num], 0)
-        functions.save_image3D('{}/real_scale_pet.jpg'.format(opt.outf), reals[scale_num], 1)
+        functions.save_image3D('{}/real_scale_ct.png'.format(opt.outf), reals[scale_num], 0)
+        functions.save_image3D('{}/real_scale_pet.png'.format(opt.outf), reals[scale_num], 1)
 
         d_curr = init_D3D(opt)
         if scale_num > 0:
@@ -181,10 +181,10 @@ def train_single_scale(netD, netG, reals, fixed_noise, noise_amp, opt, depth):
         # (3) Log Results
         ###########################
         if iter % 500 == 0 or iter+1 == opt.niter:
-            functions.save_image3D('{}/fake_sample_{}_ct.jpg'.format(opt.outf, iter+1), fake.detach(), 0)
-            functions.save_image3D('{}/fake_sample_{}_pet.jpg'.format(opt.outf, iter+1), fake.detach(), 1)
-            functions.save_image3D('{}/reconstruction_{}_ct.jpg'.format(opt.outf, iter+1), rec.detach(), 0)
-            functions.save_image3D('{}/reconstruction_{}_pet.jpg'.format(opt.outf, iter+1), rec.detach(), 1)
+            functions.save_image3D('{}/fake_sample_{}_ct.png'.format(opt.outf, iter+1), fake.detach(), 0)
+            functions.save_image3D('{}/fake_sample_{}_pet.png'.format(opt.outf, iter+1), fake.detach(), 1)
+            functions.save_image3D('{}/reconstruction_{}_ct.png'.format(opt.outf, iter+1), rec.detach(), 0)
+            functions.save_image3D('{}/reconstruction_{}_pet.png'.format(opt.outf, iter+1), rec.detach(), 1)
             generate_samples3D(netG, opt, depth, noise_amp, reals, iter+1)
 
         schedulerD.step()

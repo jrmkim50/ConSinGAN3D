@@ -185,15 +185,30 @@ def read_image(opt):
     return x
 
 Z_CROPS = {
-    "i104288_img_0.nii.gz" : 114
+    "i104288_img_0.nii.gz" : (0, 114)
+}
+
+X_CROPS = {
+    "i104288_img_0.nii.gz" : (14, 49)
+}
+
+Y_CROPS = {
+    "i104288_img_0.nii.gz" : (18, 46)
 }
 
 def read_image3D(opt):
     x = nib.load('%s' % (opt.input_name)).get_fdata() # [w,h,d,c]
     x[:,:,:,0] /= 0.172 # place ct in [0 - 1 range]
     file_name = opt.input_name.split("/")[-1]
+    if file_name in X_CROPS:
+        min_x, max_x = X_CROPS[file_name]
+        x = x[min_x:max_x,:,:]
+    if file_name in Y_CROPS:
+        min_y, max_y = Y_CROPS[file_name]
+        x = x[:,min_y:max_y,:]
     if file_name in Z_CROPS:
-        x = x[:,:,:Z_CROPS[file_name]]
+        min_z, max_z = Z_CROPS[file_name]
+        x = x[:,:,min_z:max_z]
     x = np2torch3D(x,opt)
     return x
 
@@ -333,7 +348,7 @@ def generate_dir2save(opt):
         if opt.fine_tune:
             dir2save += "_{}".format("fine-tune")
     # Jeremy changed below line
-    dir2save += "_train_depth_{}_lr_{}_num_layer_{}_train_stages_{}".format(opt.train_depth, opt.lr_g, opt.num_layer, opt.train_stages)
+    dir2save += "_train_depth_{}_num_layer_{}_train_stages_{}_nfc_{}".format(opt.train_depth, opt.num_layer, opt.train_stages, opt.nfc)
     if opt.batch_norm:
         dir2save += "_BN"
     dir2save += "_act_" + opt.activation

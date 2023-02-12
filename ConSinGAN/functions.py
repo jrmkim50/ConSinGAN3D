@@ -348,7 +348,7 @@ def generate_dir2save(opt):
         if opt.fine_tune:
             dir2save += "_{}".format("fine-tune")
     # Jeremy changed below line
-    dir2save += "_train_depth_{}_num_layer_{}_train_stages_{}_nfc_{}".format(opt.train_depth, opt.num_layer, opt.train_stages, opt.nfc)
+    dir2save += "_train_depth_{}_num_layer_{}_train_stages_{}_nfc_{}_niter_{}".format(opt.train_depth, opt.num_layer, opt.train_stages, opt.nfc, opt.niter)
     if opt.batch_norm:
         dir2save += "_BN"
     dir2save += "_act_" + opt.activation

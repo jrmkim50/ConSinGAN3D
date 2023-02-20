@@ -34,5 +34,6 @@ def get_arguments():
     parser.add_argument('--activation', default='lrelu', help="activation function {lrelu, prelu, elu, selu}")
     parser.add_argument('--lrelu_alpha', type=float, help='alpha for leaky relu', default=0.05)
     parser.add_argument('--batch_norm', action='store_true', help='use batch norm in generator', default=0)
+    parser.add_argument('--residual_blocks', action='store_true', help='use residual blocks', default=0)
 
     return parser

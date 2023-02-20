@@ -50,6 +50,33 @@ class ConvBlock3D(nn.Sequential):
             self.add_module('norm', nn.BatchNorm3d(out_channel))
         self.add_module(opt.activation, get_activation(opt))
         
+class ResidualBlock3D(nn.Module):
+    def __init__(self, in_channel, out_channel, ker_size, padd, opt, generator=False):
+        super(ResidualBlock3D, self).__init__()
+        self.generator = generator
+        self.conv1 = nn.Conv3d(in_channel, out_channel, kernel_size=ker_size, stride=1, padding=padd)
+        self.bn1 = nn.BatchNorm3d(out_channel)
+        self.act = get_activation(opt)
+        self.conv2 = nn.Conv3d(out_channel, out_channel, kernel_size=ker_size, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(out_channel)
+        self.downsample = nn.Sequential(
+            nn.Conv3d(in_channel, out_channel, kernel_size=ker_size, stride=1),
+            nn.BatchNorm3d(out_channel))
+        
+    def forward(self, x):
+        residual = x
+        out = self.conv1(x)
+        if self.generator:
+            out = self.bn1(out)
+        out = self.act(out)
+        
+        out = self.conv2(out)
+        if self.generator:
+            out = self.bn2(out)
+        out += self.downsample(residual)
+        out = self.act(out)
+        return out
+        
 class Discriminator(nn.Module):
     def __init__(self, opt):
         super(Discriminator, self).__init__()
@@ -80,10 +107,14 @@ class Discriminator3D(nn.Module):
         N = int(opt.nfc)
 
         self.head = ConvBlock3D(opt.nc_im, N, opt.ker_size, opt.padd_size, opt)
+        if opt.residual_blocks:
+            self.head = ResidualBlock3D(opt.nc_im, N, opt.ker_size, opt.padd_size, opt)
 
         self.body = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock3D(N, N, opt.ker_size, opt.padd_size, opt)
+            if opt.residual_blocks:
+                block = ResidualBlock3D(N, N, opt.ker_size, opt.padd_size, opt)
             self.body.add_module('block%d'%(i),block)
 
         self.tail = nn.Conv3d(N, 1, kernel_size=opt.ker_size, padding=opt.padd_size)
@@ -161,11 +192,15 @@ class GrowingGenerator3D(nn.Module):
                                                         else nn.ConstantPad3d(opt.num_layer, 0)
 
         self.head = ConvBlock3D(opt.nc_im, N, opt.ker_size, opt.padd_size, opt, generator=True)
+        if opt.residual_blocks:
+            self.head = ResidualBlock3D(opt.nc_im, N, opt.ker_size, opt.padd_size, opt, generator=True)
 
         self.body = torch.nn.ModuleList([])
         _first_stage = nn.Sequential()
         for i in range(opt.num_layer):
             block = ConvBlock3D(N, N, opt.ker_size, opt.padd_size, opt, generator=True)
+            if opt.residual_blocks:
+                block = ResidualBlock3D(N, N, opt.ker_size, opt.padd_size, opt, generator=True)
             _first_stage.add_module('block%d'%(i),block)
         self.body.append(_first_stage)
 
